@@ -1,7 +1,7 @@
 #!/usr/bin/env nu
 
 # Cleanup test database environment
-def main [--force (-f): bool = false] {
+def main [--force (-f)] {
     print $"(ansi yellow)Cleaning up test database environment...(ansi reset)"
     
     if not $force {
@@ -33,8 +33,8 @@ def main [--force (-f): bool = false] {
                 break
             } catch {
                 sleep 1sec
-                $attempt = $attempt + 1
             }
+            $attempt = ($attempt + 1)
         }
         
         print "PostgreSQL server stopped"

@@ -34,7 +34,7 @@ def validate-connection [] {
     # Test connection
     try {
         with-env $db_env {
-            let result = (echo "SELECT 1 as test;" | psql -t | str trim)
+            let result = ("SELECT 1 as test;" | psql -t | str trim)
             if $result != "1" {
                 error make {msg: "Database connection test failed"}
             }
@@ -99,8 +99,8 @@ def discover-migrations [
 # Error: Stops on first migration failure and rolls back transaction
 export def "migrate run" [
     path: string,           # Directory path containing migration files
-    --dry-run (-n): bool,   # Show what would be executed without applying
-    --force (-f): bool      # Skip validation checks
+    --dry-run (-n),         # Show what would be executed without applying
+    --force (-f)            # Skip validation checks
 ] {
     print $"Running migrations from: ($path)"
     
@@ -221,7 +221,7 @@ export def "migrate history" [
     try {
         with-env $db_env {
             let sql = $"SELECT migration_name, migration_hash, applied_at, execution_time_ms FROM ($table_name) ORDER BY applied_at DESC"
-            echo $sql | psql -c $sql | from csv
+            $sql | psql | from csv
         }
     } catch {
         print $"No migration history found for track: ($track_name)"
@@ -256,9 +256,7 @@ export def "migrate validate" [
     }
     
     # Validate each migration
-    mut validation_results = []
-    
-    for migration in $migrations {
+    let validation_results = ($migrations | each { |migration|
         print $"Validating: ($migration.filename)"
         
         # Check if .nu validation file exists
@@ -266,26 +264,26 @@ export def "migrate validate" [
         if ($nu_file | path exists) {
             try {
                 nu $nu_file
-                $validation_results = ($validation_results | append {
+                {
                     migration: $migration.filename,
                     status: "VALID",
                     message: "Pre-flight validation passed"
-                })
+                }
             } catch {
-                $validation_results = ($validation_results | append {
+                {
                     migration: $migration.filename,
                     status: "ERROR",
                     message: $"Pre-flight validation failed: ($in)"
-                })
+                }
             }
         } else {
-            $validation_results = ($validation_results | append {
+            {
                 migration: $migration.filename,
                 status: "VALID", 
                 message: "No validation script"
-            })
+            }
         }
-    }
+    })
     
     $validation_results | table
 }
@@ -306,7 +304,7 @@ export def "migrate validate" [
 export def "migrate add" [
     path: string,                   # Directory where migration should be created
     description: string,            # Description of what the migration does
-    --with-validation (-v): bool,   # Also create .nu validation file
+    --with-validation (-v),         # Also create .nu validation file
     --track (-t): string           # Override track name (default: extracted from path)
 ] {
     if not ($path | path exists) {
@@ -349,22 +347,24 @@ export def "migrate add" [
     
     # Create validation file if requested
     if $with_validation {
-        let nu_template = $"#!/usr/bin/env nu
-
-# Pre-flight validation for ($description)
-# This script validates dependencies before applying the SQL migration
-
-print \"Running pre-flight validation for ($description)...\"
-
-# TODO: Add your validation logic here
-# Example:
-# let table_exists = (psql -t -c \"SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'required_table')\" | str trim)
-# if $table_exists != \"t\" {
-#     error make { msg: \"Required table 'required_table' does not exist\" }
-# }
-
-print \"Pre-flight validation passed for ($description)\"
-"
+        let nu_template = [
+            "#!/usr/bin/env nu",
+            "",
+            $"# Pre-flight validation for ($description)",
+            "# This script validates dependencies before applying the SQL migration",
+            "",
+            $"print \"Running pre-flight validation for ($description)...\"",
+            "",
+            "# TODO: Add your validation logic here",
+            "# Example:",
+            "# let table_exists = (\"SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'required_table')\" | psql -t | str trim)",
+            "# if $table_exists != \"t\" {",
+            "#     error make { msg: \"Required table 'required_table' does not exist\" }",
+            "# }",
+            "",
+            $"print \"Pre-flight validation passed for ($description)\""
+        ] | str join "\n"
+        
         $nu_template | save $nu_file
         print $"Created validation script: ($nu_file)"
     }
@@ -385,7 +385,7 @@ def get-applied-migrations [
     try {
         with-env $db_env {
             let sql = $"SELECT migration_name FROM ($table_name) ORDER BY applied_at"
-            echo $sql | psql -t -c $sql | lines | where $it != ""
+            $sql | psql -t | lines | where $it != ""
         }
     } catch {
         # Table doesn't exist yet, no migrations applied
@@ -417,28 +417,37 @@ def execute-migrations [
     }
     
     # Build combined SQL for atomic execution
-    mut combined_sql = "BEGIN;\n"
+    let sql_parts = ["BEGIN;"]
     
-    for migration in $migrations {
+    let migration_sqls = ($migrations | each { |migration|
         if $migration.extension == "sql" {
             print $"Preparing migration: ($migration.filename)"
             let sql_content = (open $migration.full_path)
-            $combined_sql = $combined_sql + $"-- Migration: ($migration.filename)\n" + $sql_content + "\n\n"
             
             # Add metadata insert
             let table_name = $"($MIGRATION_TABLE_PREFIX)($track_name)"
             let hash = ($sql_content | hash md5)
-            $combined_sql = $combined_sql + $"INSERT INTO ($table_name) (migration_name, migration_hash) VALUES ('($migration.filename)', '($hash)');\n\n"
+            let insert_sql = $"INSERT INTO ($table_name) \(migration_name, migration_hash) VALUES \('($migration.filename)', '($hash)');"
+            
+            [
+                $"-- Migration: ($migration.filename)",
+                $sql_content,
+                $insert_sql,
+                ""
+            ]
+        } else {
+            []
         }
-    }
+    } | flatten)
     
-    $combined_sql = $combined_sql + "COMMIT;\n"
+    let all_sql_parts = ($sql_parts | append $migration_sqls | append "COMMIT;")
+    let final_sql = ($all_sql_parts | str join "\n")
     
     # Execute combined SQL
     try {
         with-env $db_env {
             print "Executing migrations..."
-            echo $combined_sql | psql
+            $final_sql | psql
         }
         print $"Successfully applied ($migrations | length) migration(s)"
     } catch {
@@ -453,17 +462,17 @@ def create-metadata-table [
     let db_env = (get-db-env)
     let table_name = $"($MIGRATION_TABLE_PREFIX)($track_name)"
     
-    let create_sql = $"CREATE TABLE IF NOT EXISTS ($table_name) (
+    let create_sql = $"CREATE TABLE IF NOT EXISTS ($table_name) \(
     id SERIAL PRIMARY KEY,
-    migration_name VARCHAR(255) NOT NULL UNIQUE,
-    migration_hash VARCHAR(64) NOT NULL,
+    migration_name VARCHAR\(255) NOT NULL UNIQUE,
+    migration_hash VARCHAR\(64) NOT NULL,
     applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     execution_time_ms INTEGER
 );"
     
     try {
         with-env $db_env {
-            echo $create_sql | psql
+            $create_sql | psql
         }
     } catch {
         error make {msg: $"Failed to create metadata table ($table_name): ($in)"}

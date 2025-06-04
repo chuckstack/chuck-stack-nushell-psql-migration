@@ -32,7 +32,7 @@ def main [] {
         print "Initializing PostgreSQL cluster..."
         
         # Initialize database cluster
-        initdb -D $env.TEST_DB_DIR --auth-local=trust --auth-host=password --username=$env.PGUSER
+        initdb -D $env.TEST_DB_DIR --auth-local=trust --auth-host=trust
         
         # Configure PostgreSQL for testing
         let config_additions = [
@@ -42,12 +42,11 @@ def main [] {
             "log_destination = 'stderr'",
             "logging_collector = off",
             "log_min_duration_statement = 0",
-            "shared_preload_libraries = ''",
             "max_connections = 20"
         ]
         
         for config in $config_additions {
-            $config | save --append $"($env.TEST_DB_DIR)/postgresql.conf"
+            $"($config)\n" | save --append $"($env.TEST_DB_DIR)/postgresql.conf"
         }
         
         print "PostgreSQL cluster initialized"
@@ -74,8 +73,8 @@ def main [] {
                 break
             } catch {
                 sleep 1sec
-                $attempt = $attempt + 1
             }
+            $attempt = ($attempt + 1)
         }
         
         if $attempt >= $max_attempts {

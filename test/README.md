@@ -1,215 +1,193 @@
-# Testing Framework
+# Migration Utility Testing
 
-## Overview
-This testing framework provides isolated, fast, and reproducible testing for the nushell psql migration utility using nix-shell and local PostgreSQL instances.
+## Quick Start
+
+The fastest way to test the migration utility:
+
+```bash
+# 1. Enter test environment
+nix-shell
+
+# 2. Run smoke test (no database required)
+nu smoke-test.nu
+
+# 3. For full testing with database
+nu test/setup-test-db.nu    # Setup
+nu test/run-tests.nu        # Run tests  
+nu test/cleanup-test-db.nu  # Cleanup
+```
+
+## Test Output Standard
+
+**All tests output exactly one line:**
+- `TEST_RESULT: PASS` for success (exit code 0)
+- `TEST_RESULT: FAIL` for failure (exit code 1)
+
+This enables reliable automation: `nu test.nu | grep -q "TEST_RESULT: PASS"`
+
+See [TESTING.md](../TESTING.md) for complete testing guidelines.
+
+## Test Categories
+
+### Smoke Tests (Project Root)
+- **No dependencies**: Work without database or setup
+- **Quick validation**: Basic functionality checks
+- **Pattern**: `smoke-test*.nu`
+- **Example**: `nu smoke-test.nu`
+
+### Integration Tests (test/suites/)
+- **Full workflow**: Database connectivity required
+- **Comprehensive**: End-to-end migration testing
+- **Pattern**: `test/suites/test-*.nu`
+- **Example**: `nu test/run-tests.nu`
+
+## Testing Environment
+
+### Nix Shell Environment
+Provides isolated, reproducible testing with:
+- PostgreSQL 17.5 on port 5433
+- Nushell with migration utility
+- Unix socket connections
+- Test-specific configuration
+
+### Test Database
+- **Host**: Unix socket (`/test/tmp/sockets`)
+- **Port**: 5433 (no conflicts with system PostgreSQL)
+- **Database**: `migration_test`  
+- **User**: `test_user`
+- **Data**: Isolated in `test/tmp/` (ignored by git)
+
+### Sample Migrations
+Realistic test data in `test/fixtures/migrations/`:
+- **core/**: User authentication, roles, permissions
+- **impl/**: Custom fields, audit trails
+- **acme/**: Company-specific branding
 
 ## Directory Structure
 
 ```
 test/
 ├── README.md                    # This file
-├── .psqlrc                      # Test-specific psqlrc configuration
-├── migration-config.json       # Test configuration for migration tool
-├── setup-test-db.nu            # Initialize test database
-├── cleanup-test-db.nu          # Cleanup test database
-├── run-tests.nu                # Test runner
-├── fixtures/                   # Test data and sample migrations
+├── .psqlrc                      # Test PostgreSQL configuration
+├── migration-config.json       # Migration tool test config
+├── setup-test-db.nu            # Database initialization
+├── cleanup-test-db.nu          # Database cleanup  
+├── run-tests.nu                # Test suite runner
+├── fixtures/                   # Test data
 │   └── migrations/
-│       ├── core/               # Core track test migrations
-│       ├── impl/               # Implementation track test migrations
-│       └── acme/               # Customer-specific test migrations
-├── suites/                     # Test suite modules
+│       ├── core/               # Core migrations
+│       ├── impl/               # Implementation migrations  
+│       └── acme/               # Customer migrations
+├── suites/                     # Integration test suites
 │   ├── test-basic-functionality.nu
 │   ├── test-multi-track.nu
 │   ├── test-validation.nu
 │   └── test-psql-features.nu
-└── tmp/                        # Runtime test data (auto-created)
-    ├── postgres/               # PostgreSQL data directory
-    ├── sockets/                # Unix socket directory
+└── tmp/                        # Runtime data (git ignored)
+    ├── postgres/               # PostgreSQL data
+    ├── sockets/                # Unix sockets
     └── logs/                   # PostgreSQL logs
 ```
 
-## Getting Started
+## Common Commands
 
-### 1. Enter the test environment
 ```bash
+# Quick smoke test (no setup required)
+nu smoke-test.nu
+
+# Full test environment setup
 nix-shell
-```
-
-### 2. Initialize test database
-```bash
 nu test/setup-test-db.nu
-```
 
-### 3. Run tests
-```bash
+# Run specific test suite  
+nu test/suites/test-basic-functionality.nu
+
 # Run all tests
 nu test/run-tests.nu
 
-# Run specific test pattern
+# Run tests with pattern matching
 nu test/run-tests.nu --test-pattern "basic"
 
-# Run with verbose output
-nu test/run-tests.nu --verbose
-```
+# Manual database access
+psql -h $TEST_SOCKET_DIR -p $PGPORT -U $PGUSER -d $PGDATABASE
 
-### 4. Cleanup (when done)
-```bash
+# Check test database status
+pg_ctl status -D $TEST_DB_DIR
+
+# View PostgreSQL logs
+tail -f test/tmp/logs/postgres.log
+
+# Complete cleanup
 nu test/cleanup-test-db.nu
 ```
 
-## Test Environment Configuration
-
-### Environment Variables
-The nix-shell automatically sets up these test-specific environment variables:
-
-- `TEST_ROOT`: Base test directory
-- `TEST_DB_DIR`: PostgreSQL data directory  
-- `TEST_SOCKET_DIR`: Unix socket directory
-- `TEST_LOG_DIR`: Log file directory
-- `PGDATA`, `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`: PostgreSQL connection
-- `PSQLRC`: Points to test-specific .psqlrc
-- `MIGRATION_CONFIG`: Points to test configuration file
-
-### PostgreSQL Configuration
-- **Port**: 5433 (avoids conflicts with system PostgreSQL)
-- **Socket**: `/test/tmp/sockets` (isolated from system)
-- **Database**: `migration_test`
-- **User**: `test_user`
-- **Authentication**: Trust for local connections
-
-## Test Fixtures
-
-### Sample Migrations
-The `fixtures/migrations/` directory contains realistic sample migrations that demonstrate:
-
-- **Core track**: Basic user authentication and roles
-- **Implementation track**: Custom fields and audit trails
-- **Customer track**: Company-specific branding and configuration
-
-### Migration Features Tested
-- Basic SQL execution
-- psql variables and conditional logic
-- Cross-track dependencies
-- Pre-flight validation with .nu files
-- Complex schema changes
-- Performance considerations
-
-## Test Suites
-
-### test-basic-functionality.nu
-- Migration file discovery and parsing
-- Basic SQL execution and connection testing
-- Error handling and cleanup
-
-### test-multi-track.nu
-- Multi-track migration discovery
-- Track-specific metadata tables
-- Execution order (core first, then others)
-- Cross-track operations
-
-### test-validation.nu
-- Pre-flight validation with .nu files
-- Dependency checking
-- Error propagation and rollback
-- Validation script execution
-
-### test-psql-features.nu
-- Variable injection and usage
-- Conditional migration execution  
-- Dynamic SQL generation
-- Advanced psql feature integration
-
 ## Writing Tests
 
-### Test Structure
-Each test suite should:
-1. Print clear test descriptions
-2. Use descriptive assertions with helpful error messages
-3. Clean up any test data
-4. Use the shared database connection environment
+Follow the standard test pattern from [TESTING.md](../TESTING.md):
 
-### Example Test Function
 ```nushell
-def test_example [] {
-    print "Test: Example functionality"
+#!/usr/bin/env nu
+
+# Test description and expected output
+use src/mod.nu *
+
+try {
+    # Test logic - suppress output with | ignore
+    migrate status test/fixtures/migrations/core | ignore
     
-    # Setup
-    let test_data = "some setup"
-    
-    # Execute
-    let result = (some_command $test_data)
-    
-    # Assert
-    if $result != $expected {
-        error make { 
-            msg: $"Expected ($expected), got ($result)" 
-        }
-    }
-    
-    print "  ✓ Example test passed"
-    
-    # Cleanup
-    cleanup_test_data
+    print "TEST_RESULT: PASS"
+} catch {
+    print "TEST_RESULT: FAIL"
+    exit 1
 }
 ```
 
-### Common Utilities
-Use these patterns for consistent testing:
+## Troubleshooting
 
-```nushell
-# Database connection test
-psql -h $env.TEST_SOCKET_DIR -p $env.PGPORT -U $env.PGUSER -d $env.PGDATABASE -c "SELECT 1"
-
-# Check if table exists
-let table_exists = (psql -t -c "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'tablename')" | str trim)
-
-# Count rows in migration metadata
-let migration_count = (psql -t -c "SELECT COUNT(*) FROM migrations_core" | str trim | into int)
-```
-
-## Debugging
-
-### Manual Database Access
-Connect to the test database for manual inspection:
+### Database Connection Issues
 ```bash
-psql -h $TEST_SOCKET_DIR -p $PGPORT -U $PGUSER -d $PGDATABASE
+# Check if PostgreSQL is running
+pg_ctl status -D $TEST_DB_DIR
+
+# Restart database
+nu test/cleanup-test-db.nu --force
+nu test/setup-test-db.nu
 ```
 
-### Log Files
-PostgreSQL logs are written to `test/tmp/logs/postgres.log`
+### Port Conflicts  
+The test uses port 5433 to avoid conflicts. If needed, change `PGPORT` in `shell.nix`.
 
-### Verbose Mode
-Run tests with `--verbose` flag for detailed output
+### Permission Issues
+Ensure test directories are writable:
+```bash
+chmod -R 755 test/tmp/
+```
+
+### Nix Shell Issues
+If dependencies are missing:
+```bash
+nix-shell --pure  # Clean environment
+nix-collect-garbage  # Clear cache if needed
+```
 
 ## CI/CD Integration
 
-The test framework is designed to work in CI environments:
-- Uses nix for reproducible dependencies
-- Self-contained with no external dependencies
-- Fast setup and teardown
-- Clear exit codes (0 for success, 1 for failure)
-
-### Example CI Usage
-```bash
-nix-shell --run "nu test/run-tests.nu"
+Example GitHub Actions workflow:
+```yaml
+- name: Run Migration Tests
+  run: |
+    nix-shell --run "
+      nu smoke-test.nu | grep -q 'TEST_RESULT: PASS' &&
+      nu test/setup-test-db.nu &&
+      nu test/run-tests.nu | grep -q 'TEST_RESULT: PASS'
+    "
 ```
 
-## Performance Testing
+## Performance Considerations
 
-The framework supports performance testing by:
-- Timing migration execution
-- Testing with large datasets
-- Measuring database growth
-- Validating index performance
+- **Smoke tests**: ~1 second (no database)
+- **Database setup**: ~10-30 seconds
+- **Integration tests**: ~30-60 seconds  
+- **Full test suite**: ~2-5 minutes
 
-Performance tests should be in a separate suite and may take longer to execute.
-
-## Best Practices
-
-1. **Isolation**: Each test should be independent and not rely on previous test state
-2. **Cleanup**: Always clean up test data, even if tests fail
-3. **Descriptive**: Use clear test names and error messages
-4. **Fast**: Keep individual tests quick for rapid feedback
-5. **Realistic**: Use realistic migration scenarios in fixtures
-6. **Coverage**: Test both success and failure scenarios
+For faster development, use smoke tests for quick validation and integration tests for comprehensive checks.
