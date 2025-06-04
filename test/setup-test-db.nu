@@ -85,6 +85,30 @@ def main [] {
         print "PostgreSQL server started"
     }
     
+    # Create test user if not exists (using OS user as initial superuser)
+    let current_user = $env.USER
+    print $"Checking if test user ($env.PGUSER) exists using superuser: ($current_user)"
+    
+    let user_exists = try {
+        psql -h $env.TEST_SOCKET_DIR -p $env.PGPORT -U $current_user -d postgres -tc $"SELECT 1 FROM pg_roles WHERE rolname = '($env.PGUSER)'" --quiet | str trim | str length
+    } catch { |e|
+        print $"Error checking user existence: ($e)"
+        0
+    }
+    
+    if ($user_exists | into int) == 0 {
+        print $"Creating test user: ($env.PGUSER)"
+        try {
+            psql -h $env.TEST_SOCKET_DIR -p $env.PGPORT -U $current_user -d postgres -c $"CREATE USER ($env.PGUSER) WITH CREATEDB LOGIN" --quiet
+            print $"Test user created successfully"
+        } catch { |e|
+            print $"Error creating user: ($e)"
+            exit 1
+        }
+    } else {
+        print $"Test user ($env.PGUSER) already exists"
+    }
+    
     # Create test database if not exists
     let db_exists = try {
         psql -h $env.TEST_SOCKET_DIR -p $env.PGPORT -U $env.PGUSER -d postgres -tc $"SELECT 1 FROM pg_database WHERE datname = '($env.PGDATABASE)'" | str trim | str length

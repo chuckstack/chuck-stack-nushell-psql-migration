@@ -141,7 +141,7 @@ export def "migrate run" [
         return []
     }
     
-    print $"Found ($pending_migrations | length) pending migration(s)"
+    print $"Found ($pending_migrations | length) pending migrations"
     
     # Execute migrations
     execute-migrations $pending_migrations $track_name
@@ -449,7 +449,7 @@ def execute-migrations [
             print "Executing migrations..."
             $final_sql | psql
         }
-        print $"Successfully applied ($migrations | length) migration(s)"
+        print $"Successfully applied ($migrations | length) migrations"
     } catch {
         error make {msg: $"Migration execution failed: ($in)"}
     }

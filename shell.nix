@@ -48,7 +48,7 @@ pkgs.mkShell {
     
     # psql configuration
     export PSQLRC="$TEST_ROOT/.psqlrc"
-    export PGOPTIONS="-c log_statement=all -c log_destination=stderr"
+    # PGOPTIONS removed - conflicts with PostgreSQL startup
     export PGCLIENTENCODING="UTF8"
     
     # Migration tool configuration
