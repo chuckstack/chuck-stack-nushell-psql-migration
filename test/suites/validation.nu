@@ -116,10 +116,17 @@ def test_error_handling [] {
     
     # Test connection error handling (simulate by using wrong port)
     try {
-        "SELECT 1" | psql -h $env.PGHOST -p 9999 -U $env.PGUSER -d $env.PGDATABASE | ignore
+        "SELECT 1" | psql -h $env.PGHOST -p 9999 -U $env.PGUSER -d $env.PGDATABASE -t 2>/dev/null | ignore
         assert-true false "Should fail with wrong port"
     } catch {
-        # Expected to fail
+        # Expected to fail - this is correct behavior
+    }
+    
+    # Clean up any existing error_test table first
+    try {
+        db-execute "DROP TABLE IF EXISTS error_test"
+    } catch {
+        # Table might not exist - ignore
     }
     
     # Test transaction rollback on error
@@ -140,7 +147,7 @@ def test_error_handling [] {
     assert-equal $count 1 "Should have one row after failed insert"
     
     # Cleanup
-    db-execute "DROP TABLE error_test"
+    db-execute "DROP TABLE IF EXISTS error_test"
     
     # Test handling of missing migration files
     try {
