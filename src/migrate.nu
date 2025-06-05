@@ -19,6 +19,17 @@ def get-db-env [] {
     }
 }
 
+# Helper function to get the current default schema
+def get-default-schema [] {
+    try {
+        # Use the same approach as db-query without --quiet flag
+        "SELECT current_schema()" | psql -t | str trim
+    } catch {
+        # Fallback to 'public' if query fails
+        "public"
+    }
+}
+
 # Helper function to validate database connection
 export def validate-connection [] {
     let db_env = (get-db-env)
@@ -287,14 +298,12 @@ export def "migrate history" [
     print $"Migration history for track: ($track_name)"
     
     # Query migration history from database
-    let db_env = (get-db-env)
-    let table_name = $"($MIGRATION_TABLE_PREFIX)($track_name)"
+    let schema = (get-default-schema)
+    let table_name = $"($schema).($MIGRATION_TABLE_PREFIX)($track_name)"
     
     try {
-        with-env $db_env {
-            let sql = $"SELECT migration_name, migration_hash, applied_at, execution_time_ms FROM ($table_name) ORDER BY applied_at DESC"
-            $sql | psql | from csv
-        }
+        let sql = $"SELECT migration_name, migration_hash, applied_at, execution_time_ms FROM ($table_name) ORDER BY applied_at DESC"
+        $sql | psql | from csv
     } catch {
         print $"No migration history found for track: ($track_name)"
         []
@@ -451,19 +460,13 @@ export def "migrate add" [
 def get-applied-migrations [
     track_name: string  # Track name to check
 ] {
-    let db_env = (get-db-env)
-    let table_name = $"($MIGRATION_TABLE_PREFIX)($track_name)"
+    let schema = (get-default-schema)
+    let table_name = $"($schema).($MIGRATION_TABLE_PREFIX)($track_name)"
     
     try {
-        with-env $db_env {
-            let sql = $"SELECT migration_name FROM ($table_name) ORDER BY applied_at"
-            let result = (do { $sql | psql -t } | complete)
-            if $result.exit_code == 0 {
-                $result.stdout | lines | where $it != ""
-            } else {
-                []
-            }
-        }
+        let sql = $"SELECT migration_name FROM ($table_name) ORDER BY applied_at"
+        let result = (db-query $sql)
+        $result | lines | where $it != "" | each { |line| $line | str trim }
     } catch {
         # Table doesn't exist yet, no migrations applied
         []
@@ -502,7 +505,8 @@ def execute-migrations [
             let sql_content = (open $migration.full_path)
             
             # Add metadata insert
-            let table_name = $"($MIGRATION_TABLE_PREFIX)($track_name)"
+            let schema = (get-default-schema)
+            let table_name = $"($schema).($MIGRATION_TABLE_PREFIX)($track_name)"
             let hash = ($sql_content | hash md5)
             let insert_sql = $"INSERT INTO ($table_name) \(migration_name, migration_hash) VALUES \('($migration.filename)', '($hash)');"
             
@@ -537,7 +541,8 @@ def create-metadata-table [
     track_name: string  # Track name for table suffix
 ] {
     let db_env = (get-db-env)
-    let table_name = $"($MIGRATION_TABLE_PREFIX)($track_name)"
+    let schema = (get-default-schema)
+    let table_name = $"($schema).($MIGRATION_TABLE_PREFIX)($track_name)"
     
     let create_sql = $"CREATE TABLE IF NOT EXISTS ($table_name) \(
     id SERIAL PRIMARY KEY,

@@ -12,6 +12,7 @@ export def run_tests [] {
             (test "SQL syntax validation" { test_sql_syntax_validation }),
             (test "Duplicate migration detection" { test_duplicate_detection }),
             (test "Migration ordering" { test_migration_ordering }),
+            (test "Migration idempotency" { test_migration_idempotency }),
             (test "Error handling" { test_error_handling })
         ]
     }
@@ -113,6 +114,72 @@ def test_migration_ordering [] {
         let current = $timestamps | get $i
         let next = $timestamps | get ($i + 1)
         assert-true ($current < $next) $"Timestamp ($current) should be less than ($next)"
+    }
+}
+
+def test_migration_idempotency [] {
+    # Test that applying the same migrations twice results in no additional action
+    let migrations_dir = "fixtures/migrations/core"
+    
+    if not ($migrations_dir | path exists) {
+        print "Skipping idempotency test - fixture not found"
+        return
+    }
+    
+    # First, clean up any existing migration tracking tables and test tables
+    try {
+        db-execute "DROP TABLE IF EXISTS users" --quiet
+        db-execute "DROP TABLE IF EXISTS roles" --quiet  
+        db-execute "DROP TABLE IF EXISTS migrations_core" --quiet
+    } catch {
+        # Ignore errors if tables don't exist
+    }
+    
+    # First migration run - should apply migrations
+    try {
+        nu -c $"use ../src/migrate.nu *; migrate run ($migrations_dir) --force"
+    } catch { |err|
+        assert-true false $"First migration run should succeed: ($err.msg)"
+    }
+    
+    # Verify tables were created
+    assert-table-exists "users" "Users table should exist after first run"
+    assert-table-exists "roles" "Roles table should exist after first run"
+    assert-table-exists "migrations_core" "Migration tracking table should exist"
+    
+    # Check that migration records were created
+    let migration_count_after_first = (db-count-rows "migrations_core")
+    assert-true ($migration_count_after_first > 0) "Should have migration records after first run"
+    
+    # Second migration run - should detect that migrations are already applied
+    try {
+        nu -c $"use ../src/migrate.nu *; migrate run ($migrations_dir) --force"
+    } catch { |err|
+        assert-true false $"Second migration run should succeed: ($err.msg)"
+    }
+    
+    # Verify tables still exist and haven't been modified
+    assert-table-exists "users" "Users table should still exist after second run"
+    assert-table-exists "roles" "Roles table should still exist after second run"
+    
+    # Verify migration tracking table hasn't gained duplicate entries
+    let migration_count_after_second = (db-count-rows "migrations_core")
+    assert-equal $migration_count_after_first $migration_count_after_second "Migration count should be same after second run"
+    
+    # Verify specific migration filenames are recorded (not duplicated)
+    let recorded_migrations = (db-query "SELECT migration_name FROM migrations_core ORDER BY applied_at")
+    let expected_migrations = ["20231201120000_core_create_users_table.sql", "20231201120001_core_create_roles_table.sql"]
+    for expected in $expected_migrations {
+        assert-contains $recorded_migrations $expected $"Should have recorded migration: ($expected)"
+    }
+    
+    # Clean up test data
+    try {
+        db-execute "DROP TABLE IF EXISTS users" --quiet
+        db-execute "DROP TABLE IF EXISTS roles" --quiet
+        db-execute "DROP TABLE IF EXISTS migrations_core" --quiet
+    } catch {
+        # Ignore cleanup errors
     }
 }
 
