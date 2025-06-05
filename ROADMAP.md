@@ -216,6 +216,13 @@ This roadmap breaks down the nushell psql migration utility implementation into 
 - [ ] Add dependency validation warnings
 - [ ] Create migration safety checks
 
+### 5.6 Migration File Integrity
+- [ ] Enhance migration verification to check for missing applied migration files
+- [ ] Implement hash comparison for applied migrations to detect file changes
+- [ ] Add warning/error when applied migration files have been modified
+- [ ] Create `migrate verify` command to check migration file integrity
+- [ ] Support recovery workflows for missing or changed migration files
+
 ### 5.4 Status and Reporting
 - [ ] Enhanced status reporting with track breakdown
 - [ ] Add migration timing and performance data
