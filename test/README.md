@@ -1,193 +1,160 @@
-# Migration Utility Testing
+# Test-New: Clean Slate Testing System
 
-## Quick Start
+A completely redesigned testing system for the nushell psql migration tool with strict clean-slate requirements and automatic lifecycle management.
 
-The fastest way to test the migration utility:
+## Key Features
 
+- **Clean Slate Guarantee**: Every test run starts completely fresh, no data contamination
+- **Automatic Lifecycle**: nix-shell manages database startup, PID tracking, and complete cleanup
+- **Nushell-Centric**: All testing logic written in nushell with rich assertion framework
+- **Nuclear Cleanup**: Exit trap ensures ALL test data is destroyed, no remnants left behind
+
+## Architecture
+
+```
+test-new/
+├── shell.nix              # Enhanced nix-shell with lifecycle management
+├── test-env.nu           # Database lifecycle management
+├── test-framework.nu     # Nushell test assertions and utilities  
+├── test-runner.nu        # Main test orchestrator
+├── migration-config.json # Test configuration
+├── suites/               # Test suites
+│   ├── basic.nu         # Basic functionality tests
+│   └── validation.nu    # Validation and error handling tests
+└── tmp/                 # Created fresh each run, destroyed on exit
+    ├── postgres/        # PostgreSQL cluster
+    ├── postgres.pid     # PID tracking for cleanup
+    ├── sockets/         # Unix sockets
+    └── logs/           # PostgreSQL logs
+```
+
+## Usage
+
+### Interactive Mode
 ```bash
-# 1. Enter test environment
-nix-shell
-
-# 2. Run smoke test (no database required)
-nu smoke-test.nu
-
-# 3. For full testing with database
-nu test/setup-test-db.nu    # Setup
-nu test/run-tests.nu        # Run tests  
-nu test/cleanup-test-db.nu  # Cleanup
+cd test-new
+nix-shell                    # Enters environment, sets up clean state
+nu test-env.nu setup        # Setup fresh database
+nu test-runner.nu           # Run all tests
+exit                         # Automatic cleanup destroys everything
 ```
 
-## Test Output Standard
-
-**All tests output exactly one line:**
-- `TEST_RESULT: PASS` for success (exit code 0)
-- `TEST_RESULT: FAIL` for failure (exit code 1)
-
-This enables reliable automation: `nu test.nu | grep -q "TEST_RESULT: PASS"`
-
-See [TESTING.md](../TESTING.md) for complete testing guidelines.
-
-## Test Categories
-
-### Smoke Tests (Project Root)
-- **No dependencies**: Work without database or setup
-- **Quick validation**: Basic functionality checks
-- **Pattern**: `smoke-test*.nu`
-- **Example**: `nu smoke-test.nu`
-
-### Integration Tests (test/suites/)
-- **Full workflow**: Database connectivity required
-- **Comprehensive**: End-to-end migration testing
-- **Pattern**: `test/suites/test-*.nu`
-- **Example**: `nu test/run-tests.nu`
-
-## Testing Environment
-
-### Nix Shell Environment
-Provides isolated, reproducible testing with:
-- PostgreSQL 17.5 on port 5433
-- Nushell with migration utility
-- Unix socket connections
-- Test-specific configuration
-
-### Test Database
-- **Host**: Unix socket (`/test/tmp/sockets`)
-- **Port**: 5433 (no conflicts with system PostgreSQL)
-- **Database**: `migration_test`  
-- **User**: `test_user`
-- **Data**: Isolated in `test/tmp/` (ignored by git)
-
-### Sample Migrations
-Realistic test data in `test/fixtures/migrations/`:
-- **core/**: User authentication, roles, permissions
-- **impl/**: Custom fields, audit trails
-- **acme/**: Company-specific branding
-
-## Directory Structure
-
-```
-test/
-├── README.md                    # This file
-├── .psqlrc                      # Test PostgreSQL configuration
-├── migration-config.json       # Migration tool test config
-├── setup-test-db.nu            # Database initialization
-├── cleanup-test-db.nu          # Database cleanup  
-├── run-tests.nu                # Test suite runner
-├── fixtures/                   # Test data
-│   └── migrations/
-│       ├── core/               # Core migrations
-│       ├── impl/               # Implementation migrations  
-│       └── acme/               # Customer migrations
-├── suites/                     # Integration test suites
-│   ├── test-basic-functionality.nu
-│   ├── test-multi-track.nu
-│   ├── test-validation.nu
-│   └── test-psql-features.nu
-└── tmp/                        # Runtime data (git ignored)
-    ├── postgres/               # PostgreSQL data
-    ├── sockets/                # Unix sockets
-    └── logs/                   # PostgreSQL logs
-```
-
-## Common Commands
-
+### Batch Mode
 ```bash
-# Quick smoke test (no setup required)
-nu smoke-test.nu
-
-# Full test environment setup
-nix-shell
-nu test/setup-test-db.nu
-
-# Run specific test suite  
-nu test/suites/test-basic-functionality.nu
+cd test-new
 
 # Run all tests
-nu test/run-tests.nu
+nix-shell --run "nu test-runner.nu --all"
 
-# Run tests with pattern matching
-nu test/run-tests.nu --test-pattern "basic"
+# Run specific test suites  
+nix-shell --run "nu test-runner.nu basic validation"
 
-# Manual database access
-psql -h $TEST_SOCKET_DIR -p $PGPORT -U $PGUSER -d $PGDATABASE
-
-# Check test database status
-pg_ctl status -D $TEST_DB_DIR
-
-# View PostgreSQL logs
-tail -f test/tmp/logs/postgres.log
-
-# Complete cleanup
-nu test/cleanup-test-db.nu
+# Verbose output
+nix-shell --run "nu test-runner.nu --all --verbose"
 ```
+
+### Manual Database Management
+```bash
+# Within nix-shell:
+nu test-env.nu status       # Check database status
+nu test-env.nu setup        # Fresh database setup
+nu test-env.nu reset        # Reset database (keep server running)
+nu test-env.nu destroy      # Nuclear cleanup
+
+# Test runner helpers:
+nu test-runner.nu status    # Environment status
+nu test-runner.nu list      # Available test suites
+nu test-runner.nu setup     # Setup database
+nu test-runner.nu destroy   # Cleanup everything
+```
+
+## Safety Features
+
+### Pre-Entry Check
+- nix-shell fails if ANY test remnants exist
+- Forces manual cleanup: `rm -rf test-new/tmp/`
+- Prevents data contamination between runs
+
+### Exit Trap Cleanup
+- Automatically kills database processes (tracked by PID)
+- Removes ALL files in `tmp/` directory
+- Triggered on: normal exit, Ctrl+C, shell termination
+
+### Nuclear Option
+- `destroy_all_test_data()` function removes everything
+- Can be called manually via `nu test-env.nu destroy`
+- Guaranteed complete cleanup
+
+## Test Framework
+
+### Assertion Functions
+```nushell
+assert-true $condition "message"
+assert-equal $actual $expected "message"
+assert-file-exists "path/to/file"
+assert-table-exists "table_name" 
+assert-sql-result "SELECT 1" "1"
+```
+
+### Database Helpers
+```nushell
+db-execute "CREATE TABLE test (id INT)"
+db-query "SELECT COUNT(*) FROM test"
+db-table-exists "table_name"
+db-count-rows "table_name"
+```
+
+### Migration Utilities
+```nushell
+parse-migration-filename "20231201120000_core_create_table.sql"
+validate-migration-timestamp "20231201120000"
+execute-migration-file "path/to/migration.sql"
+```
+
+## Configuration
+
+Environment variables are automatically set by nix-shell:
+- `TEST_ROOT`: Base directory (test-new/)
+- `TEST_DB_DIR`: PostgreSQL cluster location  
+- `TEST_PID_FILE`: Database process ID file
+- `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`: Database connection
+- `MIGRATION_CONFIG`: Test configuration file
 
 ## Writing Tests
 
-Follow the standard test pattern from [TESTING.md](../TESTING.md):
+Create new test suites in `suites/` directory:
 
 ```nushell
 #!/usr/bin/env nu
+# suites/my-test.nu
 
-# Test description and expected output
-use src/mod.nu *
+use ../test-framework.nu *
 
-try {
-    # Test logic - suppress output with | ignore
-    migrate status test/fixtures/migrations/core | ignore
-    
-    print "TEST_RESULT: PASS"
-} catch {
-    print "TEST_RESULT: FAIL"
-    exit 1
+export def run_tests [] {
+    test-suite "My Test Suite" {
+        [
+            (test "Test description" { test_function }),
+            (test "Another test" { another_test_function })
+        ]
+    }
+}
+
+def test_function [] {
+    # Your test logic here
+    assert-true true "This should pass"
 }
 ```
 
-## Troubleshooting
+Run with: `nu test-runner.nu my-test`
 
-### Database Connection Issues
-```bash
-# Check if PostgreSQL is running
-pg_ctl status -D $TEST_DB_DIR
+## Clean Slate Philosophy
 
-# Restart database
-nu test/cleanup-test-db.nu --force
-nu test/setup-test-db.nu
-```
+This system is designed around the principle that **every test run should start from a completely clean state**:
 
-### Port Conflicts  
-The test uses port 5433 to avoid conflicts. If needed, change `PGPORT` in `shell.nix`.
+1. **No persistent state**: Database and all files are created fresh each time
+2. **No contamination**: Previous test runs cannot affect current runs  
+3. **Nuclear cleanup**: Exit trap ensures no traces are left behind
+4. **Fail-fast**: System refuses to start if remnants are detected
+5. **Deterministic**: Same environment every time = reproducible results
 
-### Permission Issues
-Ensure test directories are writable:
-```bash
-chmod -R 755 test/tmp/
-```
-
-### Nix Shell Issues
-If dependencies are missing:
-```bash
-nix-shell --pure  # Clean environment
-nix-collect-garbage  # Clear cache if needed
-```
-
-## CI/CD Integration
-
-Example GitHub Actions workflow:
-```yaml
-- name: Run Migration Tests
-  run: |
-    nix-shell --run "
-      nu smoke-test.nu | grep -q 'TEST_RESULT: PASS' &&
-      nu test/setup-test-db.nu &&
-      nu test/run-tests.nu | grep -q 'TEST_RESULT: PASS'
-    "
-```
-
-## Performance Considerations
-
-- **Smoke tests**: ~1 second (no database)
-- **Database setup**: ~10-30 seconds
-- **Integration tests**: ~30-60 seconds  
-- **Full test suite**: ~2-5 minutes
-
-For faster development, use smoke tests for quick validation and integration tests for comprehensive checks.
+This approach trades some performance for absolute reliability and debuggability.
