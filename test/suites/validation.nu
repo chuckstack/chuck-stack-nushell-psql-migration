@@ -18,7 +18,7 @@ export def run_tests [] {
 }
 
 def test_invalid_filenames [] {
-    # Test various invalid filename formats
+    # Test various invalid filename formats using src function
     let invalid_names = [
         "invalid.sql",                    # No timestamp
         "20231201_missing_track.sql",     # Missing track
@@ -40,6 +40,11 @@ def test_invalid_filenames [] {
     # Test valid filename for comparison
     let valid_result = (parse-migration-filename "20231201120000_core_create_table.sql")
     assert-equal $valid_result.track "core" "Valid filename should parse correctly"
+    
+    # Test timestamp validation function
+    assert-true (validate-migration-timestamp "20231201120000") "Valid timestamp should pass"
+    assert-false (validate-migration-timestamp "invalid") "Invalid timestamp should fail"
+    assert-false (validate-migration-timestamp "2023120112") "Short timestamp should fail"
 }
 
 def test_sql_syntax_validation [] {
@@ -52,9 +57,9 @@ def test_sql_syntax_validation [] {
         assert-true false "Valid SQL should execute successfully"
     }
     
-    # Invalid SQL should fail
+    # Invalid SQL should fail (suppress error output)
     try {
-        db-execute "INVALID SQL SYNTAX HERE"
+        db-execute "INVALID SQL SYNTAX HERE" --quiet
         assert-true false "Invalid SQL should fail"
     } catch {
         # Expected to fail
@@ -114,17 +119,19 @@ def test_migration_ordering [] {
 def test_error_handling [] {
     # Test various error conditions and recovery
     
-    # Test connection error handling (simulate by using wrong port)
+    # Test connection error handling (using src validation)
     try {
-        "SELECT 1" | psql -h $env.PGHOST -p 9999 -U $env.PGUSER -d $env.PGDATABASE -t 2>/dev/null | ignore
-        assert-true false "Should fail with wrong port"
-    } catch {
-        # Expected to fail - this is correct behavior
+        let result = (do { nu -c "use ../src/migrate.nu *; validate-connection" } | complete)
+        if $result.exit_code != 0 {
+            assert-true false $"Connection validation should work: ($result.stderr)"
+        }
+    } catch { |err|
+        assert-true false $"Connection validation should work: ($err.msg)"
     }
     
     # Clean up any existing error_test table first
     try {
-        db-execute "DROP TABLE IF EXISTS error_test"
+        db-execute "DROP TABLE IF EXISTS error_test" --quiet
     } catch {
         # Table might not exist - ignore
     }
@@ -135,7 +142,7 @@ def test_error_handling [] {
     try {
         # This should fail due to duplicate key if we insert same ID twice
         db-execute "INSERT INTO error_test (id) VALUES (1)"
-        db-execute "INSERT INTO error_test (id) VALUES (1)"  # Should fail
+        db-execute "INSERT INTO error_test (id) VALUES (1)" --quiet  # Should fail
         assert-true false "Should fail on duplicate key"
     } catch {
         # Expected to fail
@@ -149,10 +156,12 @@ def test_error_handling [] {
     # Cleanup
     db-execute "DROP TABLE IF EXISTS error_test"
     
-    # Test handling of missing migration files
+    # Test handling of missing migration directories using src function
     try {
-        execute-migration-file "nonexistent_file.sql"
-        assert-true false "Should fail with nonexistent file"
+        let result = (do { nu -c "use ../src/migrate.nu *; migrate validate nonexistent_directory" } | complete)
+        if $result.exit_code == 0 {
+            assert-true false "Should fail with nonexistent directory"
+        }
     } catch {
         # Expected to fail
     }

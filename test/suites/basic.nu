@@ -4,6 +4,7 @@
 # Tests core migration discovery, parsing, and execution
 
 use ../test-framework.nu *
+use ../../src/migrate.nu [discover-migrations]
 
 export def run_tests [] {
     test-suite "Basic Migration Functionality" {
@@ -19,22 +20,31 @@ export def run_tests [] {
 }
 
 def test_migration_discovery [] {
-    # Test that we can discover migration files
+    # Test that we can discover migration files using src function
     let migrations_dir = "fixtures/migrations/core"
     
     assert-true ($migrations_dir | path exists) "Core migrations directory should exist"
     
-    let sql_files = (glob $"($migrations_dir)/*.sql" | length)
-    assert-true ($sql_files > 0) "Should find SQL migration files in core directory"
+    # Test the actual discover-migrations function from src
+    let discovered_migrations = (discover-migrations $migrations_dir)
+    assert-true (($discovered_migrations | length) > 0) "Should discover migration files in core directory"
+    
+    # Test that discovered migrations have expected structure
+    let first_migration = $discovered_migrations.0
+    assert-true ("timestamp" in $first_migration) "Migration should have timestamp field"
+    assert-true ("track" in $first_migration) "Migration should have track field"
+    assert-true ("description" in $first_migration) "Migration should have description field"
+    assert-true ("filename" in $first_migration) "Migration should have filename field"
     
     # Test specific expected files
-    let expected_files = [
-        $"($migrations_dir)/20231201120000_core_create_users_table.sql",
-        $"($migrations_dir)/20231201120001_core_create_roles_table.sql"
+    let expected_filenames = [
+        "20231201120000_core_create_users_table.sql",
+        "20231201120001_core_create_roles_table.sql"
     ]
     
-    for file in $expected_files {
-        assert-file-exists $file $"Expected migration file should exist: ($file)"
+    let discovered_filenames = ($discovered_migrations | get filename)
+    for expected_file in $expected_filenames {
+        assert-true ($expected_file in $discovered_filenames) $"Should discover expected file: ($expected_file)"
     }
 }
 
@@ -92,20 +102,37 @@ def test_sql_execution [] {
 }
 
 def test_migration_execution [] {
-    # Test executing actual migration files
-    let migration_file = "fixtures/migrations/core/20231201120000_core_create_users_table.sql"
+    # Test executing migrations using the actual migrate run command
+    let migrations_dir = "fixtures/migrations/core"
     
-    if ($migration_file | path exists) {
-        execute-migration-file $migration_file
-        assert-table-exists "users" "Users table should be created by migration"
+    if ($migrations_dir | path exists) {
+        # Use the actual migrate run command (dry-run first)
+        try {
+            nu -c $"use ../src/migrate.nu *; migrate run ($migrations_dir) --dry-run"
+        } catch { |err|
+            assert-true false $"Dry run should not fail: ($err.msg)"
+        }
         
-        # Test the structure
-        let columns = (db-query "SELECT column_name FROM information_schema.columns WHERE table_name = 'users' ORDER BY ordinal_position")
-        assert-contains $columns "id" "Users table should have id column"
-        assert-contains $columns "name" "Users table should have name column"
-        
-        # Cleanup for other tests
-        db-execute "DROP TABLE IF EXISTS users"
+        # Test actual execution
+        try {
+            nu -c $"use ../src/migrate.nu *; migrate run ($migrations_dir) --force"
+            
+            # Verify tables were created
+            assert-table-exists "users" "Users table should be created by migration"
+            assert-table-exists "roles" "Roles table should be created by migration"
+            
+            # Test the structure
+            let user_columns = (db-query "SELECT column_name FROM information_schema.columns WHERE table_name = 'users' ORDER BY ordinal_position")
+            assert-contains $user_columns "id" "Users table should have id column"
+            assert-contains $user_columns "name" "Users table should have name column"
+            
+            # Cleanup for other tests
+            db-execute "DROP TABLE IF EXISTS users"
+            db-execute "DROP TABLE IF EXISTS roles"
+            db-execute "DROP TABLE IF EXISTS migrations_core"
+        } catch { |err|
+            assert-true false $"Migration execution should not fail: ($err.msg)"
+        }
     } else {
         # Skip if fixture doesn't exist
         print "Skipping migration execution test - fixture not found"

@@ -150,90 +150,26 @@ export def assert-sql-result [
     }
 }
 
-# Database helper functions
-export def db-execute [
-    sql: string
-] {
-    try {
-        $sql | psql -h $env.PGHOST -p $env.PGPORT -U $env.PGUSER -d $env.PGDATABASE | ignore
-    } catch { |err|
-        error make {msg: $"Database execution failed: ($err.msg)"}
-    }
-}
+# Database helper functions and migration utilities (re-exported from src for test convenience)
+use ../src/migrate.nu [db-execute, db-query, db-table-exists, db-count-rows, parse-migration-filename, validate-migration-timestamp]
+export use ../src/migrate.nu [db-execute, db-query, db-table-exists, db-count-rows, parse-migration-filename, validate-migration-timestamp]
 
-export def db-query [
-    sql: string
-] {
-    try {
-        $sql | psql -h $env.PGHOST -p $env.PGPORT -U $env.PGUSER -d $env.PGDATABASE -t | str trim
-    } catch { |err|
-        error make {msg: $"Database query failed: ($err.msg)"}
-    }
-}
-
-export def db-table-exists [
-    table_name: string
-] {
-    try {
-        let result = (db-query $"SELECT EXISTS \(SELECT FROM information_schema.tables WHERE table_name = '($table_name)');")
-        $result | str contains "t"
-    } catch {
-        false
-    }
-}
-
-export def db-count-rows [
-    table_name: string
-] {
-    try {
-        let result = (db-query $"SELECT COUNT\(*) FROM ($table_name);")
-        $result | into int
-    } catch {
-        0
-    }
-}
-
-# Migration testing utilities
-export def migration-file-exists [
-    file_path: string
-] {
-    ($file_path | path exists) and ($file_path | str ends-with ".sql")
-}
-
-export def parse-migration-filename [
-    filename: string
-] {
-    let parts = ($filename | str replace ".sql" "" | split row "_")
+# Test fixtures creation
+export def create-test-fixtures [] {
+    # Create sample migration files for testing
+    let fixtures_dir = $"($env.TEST_ROOT)/fixtures/migrations"
+    mkdir $fixtures_dir
     
-    if ($parts | length) < 3 {
-        error make {msg: $"Invalid migration filename format: ($filename)"}
-    }
+    # Core migrations
+    mkdir $"($fixtures_dir)/core"
+    "CREATE TABLE users (id SERIAL PRIMARY KEY, name VARCHAR(100));" | save --force $"($fixtures_dir)/core/20231201120000_core_create_users_table.sql"
+    "CREATE TABLE roles (id SERIAL PRIMARY KEY, name VARCHAR(50));" | save --force $"($fixtures_dir)/core/20231201120001_core_create_roles_table.sql"
     
-    {
-        timestamp: $parts.0,
-        track: $parts.1,
-        description: ($parts | skip 2 | str join "_"),
-        filename: $filename
-    }
-}
-
-export def validate-migration-timestamp [
-    timestamp: string
-] {
-    # Basic validation for YYYYMMDDHHMMSS format
-    ($timestamp | str length) == 14 and ($timestamp =~ '^[0-9]{14}$')
-}
-
-export def execute-migration-file [
-    file_path: string
-] {
-    try {
-        let content = (open $file_path)
-        psql -h $env.PGHOST -p $env.PGPORT -U $env.PGUSER -d $env.PGDATABASE -f $file_path | ignore
-        print $"✓ Executed migration: ($file_path)"
-    } catch { |err|
-        error make {msg: $"Failed to execute migration ($file_path): ($err.msg)"}
-    }
+    # Impl migrations  
+    mkdir $"($fixtures_dir)/impl"
+    "ALTER TABLE users ADD COLUMN email VARCHAR(255);" | save --force $"($fixtures_dir)/impl/20231201130000_impl_add_user_email.sql"
+    
+    print $"✓ Created test fixtures in ($fixtures_dir)"
 }
 
 # Test runner utilities
@@ -257,21 +193,4 @@ export def print-test-summary [
         print $"(ansi red)($total_failed) test(s) failed!(ansi reset)"
         exit 1
     }
-}
-
-export def create-test-fixtures [] {
-    # Create sample migration files for testing
-    let fixtures_dir = $"($env.TEST_ROOT)/fixtures/migrations"
-    mkdir $fixtures_dir
-    
-    # Core migrations
-    mkdir $"($fixtures_dir)/core"
-    "CREATE TABLE users (id SERIAL PRIMARY KEY, name VARCHAR(100));" | save --force $"($fixtures_dir)/core/20231201120000_core_create_users_table.sql"
-    "CREATE TABLE roles (id SERIAL PRIMARY KEY, name VARCHAR(50));" | save --force $"($fixtures_dir)/core/20231201120001_core_create_roles_table.sql"
-    
-    # Impl migrations  
-    mkdir $"($fixtures_dir)/impl"
-    "ALTER TABLE users ADD COLUMN email VARCHAR(255);" | save --force $"($fixtures_dir)/impl/20231201130000_impl_add_user_email.sql"
-    
-    print $"✓ Created test fixtures in ($fixtures_dir)"
 }

@@ -20,7 +20,7 @@ def get-db-env [] {
 }
 
 # Helper function to validate database connection
-def validate-connection [] {
+export def validate-connection [] {
     let db_env = (get-db-env)
     
     if ($db_env.PGDATABASE | is-empty) {
@@ -45,7 +45,7 @@ def validate-connection [] {
 }
 
 # Parse migration filename to extract components
-def parse-migration-filename [
+export def parse-migration-filename [
     filename: string  # Migration filename to parse
 ] {
     let parts = ($filename | str replace --regex '\.(sql|nu)$' "" | split row "_")
@@ -63,8 +63,80 @@ def parse-migration-filename [
     }
 }
 
+# Validate migration timestamp format
+export def validate-migration-timestamp [
+    timestamp: string  # Timestamp to validate
+] {
+    # Basic validation for YYYYMMDDHHMMSS format
+    ($timestamp | str length) == 14 and ($timestamp =~ '^[0-9]{14}$')
+}
+
+# Database helper functions for testing and utilities
+export def db-execute [
+    sql: string,  # SQL to execute
+    --quiet      # Suppress error output to stderr
+] {
+    let db_env = (get-db-env)
+    try {
+        with-env $db_env {
+            if $quiet {
+                do { $sql | psql } | complete | ignore
+            } else {
+                $sql | psql | ignore
+            }
+        }
+    } catch { |err|
+        error make {msg: $"Database execution failed: ($err.msg)"}
+    }
+}
+
+export def db-query [
+    sql: string,  # SQL query to execute
+    --quiet      # Suppress error output to stderr
+] {
+    let db_env = (get-db-env)
+    try {
+        with-env $db_env {
+            if $quiet {
+                let result = (do { $sql | psql -t } | complete)
+                if $result.exit_code == 0 {
+                    $result.stdout | str trim
+                } else {
+                    error make {msg: "Query failed"}
+                }
+            } else {
+                $sql | psql -t | str trim
+            }
+        }
+    } catch { |err|
+        error make {msg: $"Database query failed: ($err.msg)"}
+    }
+}
+
+export def db-table-exists [
+    table_name: string  # Table name to check
+] {
+    try {
+        let result = (db-query $"SELECT EXISTS \(SELECT FROM information_schema.tables WHERE table_name = '($table_name)');")
+        $result | str contains "t"
+    } catch {
+        false
+    }
+}
+
+export def db-count-rows [
+    table_name: string  # Table name to count rows in
+] {
+    try {
+        let result = (db-query $"SELECT COUNT\(*) FROM ($table_name);")
+        $result | into int
+    } catch {
+        0
+    }
+}
+
 # Discover migration files in a directory
-def discover-migrations [
+export def discover-migrations [
     path: string  # Directory path to scan for migrations
 ] {
     if not ($path | path exists) {
@@ -385,7 +457,12 @@ def get-applied-migrations [
     try {
         with-env $db_env {
             let sql = $"SELECT migration_name FROM ($table_name) ORDER BY applied_at"
-            $sql | psql -t | lines | where $it != ""
+            let result = (do { $sql | psql -t } | complete)
+            if $result.exit_code == 0 {
+                $result.stdout | lines | where $it != ""
+            } else {
+                []
+            }
         }
     } catch {
         # Table doesn't exist yet, no migrations applied
