@@ -2,6 +2,20 @@
 
 A lightweight database migration utility built with Nushell that executes PostgreSQL migrations using `psql`. Supports multi-track migrations for ERP environments with core and implementation-specific tracks.
 
+The reason this repository exists:
+
+- Needed a CLI-centric solution
+- Evaluated sqlx-cli; however, the project determined they would rigidly limit migrations to a single track
+- Evaluated flyway; however, they do not natively support unix sockets
+
+## Why Multiple Tracks?
+
+In an enterprise setting like ERP where multiple actors contribute to a resulting installation (core + integrators + customers), maintaining a single migration repository/table is not acceptable. Core improvements go into the 'core' track maintained by the core team. Implementation firms place improvements in the 'impl' track. Etc...
+
+You may name any track as you deem appropriate. 'core' and 'impl' are simply offered for reference. You may have as many tracks as you wish.
+
+Generally, 'core' team track migrations are executed first as part of any release.. Then following tracks are executed as deemed appropriate.
+
 ## Quick Start
 
 1. **Install dependencies:**
