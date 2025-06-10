@@ -14,7 +14,7 @@ In an enterprise setting like ERP where multiple actors contribute to a resultin
 
 You may name any track as you deem appropriate. 'core' and 'impl' are simply offered for reference. You may have as many tracks as you wish.
 
-Generally, 'core' team track migrations are executed first as part of any release. Then following tracks are executed as deemed appropriate.
+Generally, 'core' team track migrations are executed first as part of any release. Then following tracks are orchestrated and executed as deemed appropriate.
 
 ## Quick Start
 
