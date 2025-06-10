@@ -10,7 +10,7 @@ The reason this repository exists:
 
 ## Why Multiple Tracks?
 
-In an enterprise setting like ERP where multiple actors contribute to a resulting installation (core + integrators + customers), maintaining a single migration repository/table is not acceptable. Core improvements go into the 'core' track maintained by the core team. Implementation firms place improvements in the 'impl' track. Etc...
+In an enterprise setting like ERP where multiple actors contribute to a resulting installation (core + integrators + customers), maintaining a single migration repository/table/track is not acceptable. Core improvements go into the 'core' track maintained by the core team. Implementation firms place improvements in the 'impl' track. Etc...
 
 You may name any track as you deem appropriate. 'core' and 'impl' are simply offered for reference. You may have as many tracks as you wish.
 
