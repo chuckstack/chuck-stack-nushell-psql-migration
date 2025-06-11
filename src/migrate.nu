@@ -465,7 +465,7 @@ def get-applied-migrations [
     
     try {
         let sql = $"SELECT migration_name FROM ($table_name) ORDER BY applied_at"
-        let result = (db-query $sql)
+        let result = (db-query $sql --quiet)
         $result | lines | where $it != "" | each { |line| $line | str trim }
     } catch {
         # Table doesn't exist yet, no migrations applied
