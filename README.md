@@ -93,7 +93,7 @@ Each track maintains its own metadata table (`migrations_core`, `migrations_impl
 
 ## Example Usage
 
-See <https://github.com/chuckstack/stk-app-sql> for an example project using this migration tool.
+See <https://github.com/chuckstack/chuck-stack-core> for an example project using this migration tool.
 
 ## Development & Testing
 
