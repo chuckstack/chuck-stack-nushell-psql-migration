@@ -105,6 +105,30 @@ nix-shell --run "nu test-runner.nu --all"
 
 For detailed testing information, see `test/README.md`.
 
+## Nix Distribution
+
+**Current version for downstream projects:**
+- Commit: `e309c1ac019cf7afeb549eebb6367215aaf471cb`
+- SHA256: `sha256-zYB1TcPQY3hK7MR/OyCi2xwpahdjbOc2+F0Qn6L+zCY=`
+
+### Getting the Hash for New Releases
+
+1. Update `get-hash.nix` with your target commit
+2. Run `nix-shell get-hash.nix` 
+3. Copy the correct hash from the error message
+4. Update this README with the new hash
+5. Update all downstream consumers (see below)
+
+### Downstream Files to Update
+
+The following files reference this repository and need updating when the hash changes:
+
+- `chuck-stack-core/test/shell.nix`
+- `chuck-stack-core/deploy-local/shell.nix`
+- `chuck-stack-nixos/nixos/stk-core.nix`
+
+To find all references: `grep -r "chuck-stack-nushell-psql-migration" --include="*.nix"`
+
 ## Features
 
 - **Atomic migrations:** All pending migrations execute in a single transaction
